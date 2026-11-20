@@ -57,11 +57,21 @@ systemctl --user disable --now superwhisper.service       # or: sudo dnf remove 
 systemctl --user enable --now superwhisper-flatpak.service
 ```
 
+### Text commit through fcitx5 (optional)
+
+If fcitx5 is installed on the host, the Flatpak installs Superwhisper's fcitx5 addon
+(`~/.local/share/fcitx5/addon/superwhisper.conf`), as upstream's installer does.
+Dictations then go straight into the focused field instead of being pasted. On KDE
+Plasma, choose **Fcitx 5** once in System Settings → Keyboard → Virtual Keyboard. The
+native app offers to do this itself, but that offer can't run from the Flatpak. When
+fcitx5 restarts, the daemon restarts too, to pick up the addon's new socket
+(`superwhisper-flatpak-fcitx5.path`). Check with `doctor`: `text commit: fcitx5 addon 3`.
+
 ### Uninstall
 
 ```sh
-systemctl --user disable --now superwhisper-flatpak.service
-rm ~/.config/systemd/user/superwhisper-flatpak.service
+systemctl --user disable --now superwhisper-flatpak.service superwhisper-flatpak-fcitx5.path
+rm ~/.config/systemd/user/superwhisper-flatpak* ~/.local/share/fcitx5/addon/superwhisper.conf
 flatpak uninstall com.superwhisper.Superwhisper
 ```
 
@@ -81,7 +91,7 @@ Tested on Fedora Asahi (aarch64), KDE Plasma 6.8, Wayland:
 | Microphone warm-up (WirePlumber `keep-inputs-ready`) | ✓ |
 | Restart on crash, clean stop/restart of the service | ✓ |
 | **Muffle** (duck other audio with a filter) | ✗ the daemon lowers other apps' volume instead |
-| **fcitx5 text commit** | ✗ text is pasted instead |
+| fcitx5 text commit (no clipboard, works in every terminal) | ✓ see below; plumbing tested with a stand-in for the addon |
 | GNOME Shell extension (push to talk on GNOME < 48) | ✗ |
 
 The x86_64 build comes from the same manifest, but only the aarch64 build has been tested

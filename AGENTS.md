@@ -58,7 +58,7 @@ sandbox is **not** a security boundary:
 ### The host unit (`manifest/files/superwhisper-flatpak.service`)
 
 - `ensure-service` (run by the launcher for every command except the unit's own) writes
-  the unit to `~/.config/systemd/user/`. It re-writes it and runs `daemon-reload` when
+  the units (the daemon's, plus the fcitx5 pair below) to `~/.config/systemd/user/`. It re-writes it and runs `daemon-reload` when
   the copy in `/app` changes, and enables it on first install, like the RPM's preset.
   When the app is opened from the launcher (`settings`), it also starts the unit.
   `SW_SERVICE_UNIT=superwhisper-flatpak.service` tells upstream the unit's name.
@@ -117,6 +117,31 @@ layout, so the launcher keeps a copy there, marked `.superwhisper-flatpak`. That
 resolves on both sides. An `app/current` without our marker belongs to upstream's
 installer and is left alone.
 
+## fcitx5 text commit
+
+The addon is a library loaded by the **host's** fcitx5. It listens on
+`$XDG_RUNTIME_DIR/superwhisper-fcitx5.sock`, and the daemon connects and sends the text
+(`VERSION\n` returns the addon version). Three pieces make that cross the sandbox:
+
+1. `ensure-fcitx5` (the launcher runs it at daemon start) writes
+   `~/.local/share/fcitx5/addon/superwhisper.conf` when the host has `fcitx5`, as
+   upstream's install.sh does. It writes through `flatpak-spawn --host`, so no mount is
+   needed and nothing is created for users without fcitx5. `Library=` is
+   `<installation>/app/<id>/<arch>/<branch>/active/files/extra/app/lib/fcitx5/libsuperwhisper-fcitx5`,
+   derived from `app-path` in `/.flatpak-info`: a host path that flatpak re-points at each
+   update. Don't run the daemon *from* that path to get it for free: a daemon started
+   before an update would load the new version's files.
+2. `--filesystem=xdg-run/superwhisper-fcitx5.sock` shares the socket file. flatpak binds
+   it only if it exists when the sandbox starts, and keeps the old inode when fcitx5
+   re-creates it.
+3. So `superwhisper-flatpak-fcitx5.path` (`PathChanged=%t/superwhisper-fcitx5.sock`)
+   starts a oneshot that runs `try-restart` on the daemon. Tested with a stand-in
+   listener: socket created after the daemon → one restart, and the daemon's sandbox gets
+   `3`. Socket re-created (new inode) → one restart, and the daemon reaches the new one.
+   Doctor: `text commit: fcitx5 addon 3`. Not yet tested with a real fcitx5.
+
+`ensure-service` installs all three units and starts the `.path` unit on first install.
+
 ## Build
 
 - `build.sh` runs `scripts/build-flatpak.sh` in a Debian 13 container (docker or podman),
@@ -135,9 +160,11 @@ installer and is left alone.
 ## Not supported in the Flatpak
 
 - **Muffle**: see above.
-- **fcitx5 text commit**: host fcitx5 would have to load the addon from `/app/extra`, and
-  the daemon talks to it over a socket in the host's runtime dir. Dictations are pasted;
-  doctor reports "no fcitx5: dictations are pasted".
+- **fcitx5's setup offer** ("Better text insertion available"). The daemon detects fcitx5
+  through `applications/org.fcitx.Fcitx5.desktop` in the sandbox's data dirs, so it never
+  offers. It would also write that file's path into kwinrc's `InputMethod`, and no path
+  it can see is valid on the host. Users pick Fcitx 5 in System Settings. Text commit
+  itself works; see below.
 - **GNOME Shell extension**: a native install puts it in
   `~/.local/share/gnome-shell/extensions`. On GNOME 48+ the GlobalShortcuts portal covers
   shortcuts.

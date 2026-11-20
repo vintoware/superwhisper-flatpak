@@ -1,0 +1,13 @@
+# Managed by the Superwhisper Flatpak; rewritten when the app updates.
+# The Flatpak sees fcitx5's Superwhisper socket through a bind mount of that one file,
+# made when the daemon's sandbox starts. When fcitx5 (re)starts it creates a new socket,
+# so the daemon is restarted to pick it up.
+[Unit]
+Description=Superwhisper (Flatpak): follow fcitx5's Superwhisper socket
+
+[Path]
+PathChanged=%t/superwhisper-fcitx5.sock
+Unit=superwhisper-flatpak-fcitx5.service
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,39 @@
+#!/bin/sh
+#
+# ensure-fcitx5 — when the host has fcitx5, installs Superwhisper's fcitx5 addon for it,
+# as upstream's install.sh does: ~/.local/share/fcitx5/addon/superwhisper.conf with
+# Library= pointing at the addon library. Called by /app/bin/superwhisper when the daemon
+# starts.
+#
+# The addon runs inside the host's fcitx5, so Library= must be a host path. The daemon
+# would write /app/extra/…, which only exists in the sandbox. We use the branch's
+# `active` deploy instead, which flatpak keeps pointing at the installed version, so the
+# path survives updates. (The daemon itself keeps running from /app/extra, pinned to its
+# own version.) The daemon's own setup offer never runs in the Flatpak: it looks for
+# fcitx5's .desktop file in the sandbox's data dirs. Users choose Fcitx 5 in System
+# Settings instead, as upstream's message says.
+#
+# The addon listens on $XDG_RUNTIME_DIR/superwhisper-fcitx5.sock on the host; finish-args
+# share that one file, and superwhisper-flatpak-fcitx5.path restarts the daemon whenever
+# fcitx5 re-creates it (see AGENTS.md).
+#
+set -eu
+
+host() { flatpak-spawn --host --directory="$HOME" "$@"; }
+
+host sh -c 'command -v fcitx5' >/dev/null 2>&1 || exit 0
+
+# app-path=<installation>/app/<id>/<arch>/<branch>/<commit>/files
+app_path=$(sed -n 's/^app-path=//p' /.flatpak-info)
+case "$app_path" in */files) ;; *) echo "ensure-fcitx5: unexpected app-path '$app_path'" >&2; exit 0 ;; esac
+branch_dir=${app_path%/*/files}
+library="$branch_dir/active/files/extra/app/lib/fcitx5/libsuperwhisper-fcitx5"
+
+want=$(sed "s|@LIBRARY@|$library|" /app/extra/app/assets/fcitx5/superwhisper.conf.in)
+conf='.local/share/fcitx5/addon/superwhisper.conf'
+have=$(host cat "$conf" 2>/dev/null || true)
+[ "$have" = "$want" ] && exit 0
+
+# shellcheck disable=SC2016  # $1 is expanded by the host's shell
+printf '%s\n' "$want" | host sh -c 'mkdir -p "$(dirname "$1")" && cat > "$1.tmp" && mv -f "$1.tmp" "$1"' sh "$conf"
+echo "ensure-fcitx5: installed $HOME/$conf (fcitx5 loads it at its next start)" >&2

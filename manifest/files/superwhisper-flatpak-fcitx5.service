@@ -1,0 +1,8 @@
+# Managed by the Superwhisper Flatpak; rewritten when the app updates.
+# Started by superwhisper-flatpak-fcitx5.path. try-restart: only when the daemon runs.
+[Unit]
+Description=Superwhisper (Flatpak): reconnect to fcitx5
+
+[Service]
+Type=oneshot
+ExecStart=systemctl --user try-restart superwhisper-flatpak.service

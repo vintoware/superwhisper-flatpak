@@ -16,7 +16,8 @@ fi
 /app/libexec/superwhisper-flatpak/sync-assets || true
 case "${1:-}" in
   # Run by the unit itself; installing or starting the unit from here would recurse.
-  daemon|playback-restore|desktop-release) ;;
+  daemon) /app/libexec/superwhisper-flatpak/ensure-fcitx5 || true ;;
+  playback-restore|desktop-release) ;;
   *) /app/libexec/superwhisper-flatpak/ensure-service "${1:-}" || true ;;
 esac
 

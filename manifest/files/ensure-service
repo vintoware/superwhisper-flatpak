@@ -1,39 +1,49 @@
 #!/bin/sh
 #
-# ensure-service [SUBCOMMAND] — keeps the host's systemd user unit for the Superwhisper
-# daemon in sync with this Flatpak version. Called by /app/bin/superwhisper.
+# ensure-service [SUBCOMMAND] — keeps the Flatpak's host systemd user units in sync with
+# this version. Called by /app/bin/superwhisper.
 #
-# - writes ~/.config/systemd/user/superwhisper-flatpak.service when it is missing or
-#   differs from the copy in /app (then daemon-reload on the host);
-# - on first install, enables it, like the RPM's preset and upstream's installer
-#   ("launch at login" in Settings toggles it afterwards);
-# - when the app is opened from the launcher (`settings`), starts it.
+# - writes the units to ~/.config/systemd/user/ when they're missing or differ from the
+#   copies in /app (then daemon-reload on the host);
+# - enables a newly installed unit: the daemon (superwhisper-flatpak.service), like the
+#   RPM's preset and upstream's installer; "launch at login" in Settings toggles it
+#   afterwards. The fcitx5 socket watcher (superwhisper-flatpak-fcitx5.path) is also
+#   started;
+# - when the app is opened from the launcher (`settings`), starts the daemon.
 #
 set -eu
 
-UNIT=superwhisper-flatpak.service
-SRC=/app/share/superwhisper-flatpak/$UNIT
+SHARE=/app/share/superwhisper-flatpak
 DIR="$HOME/.config/systemd/user"
-DST="$DIR/$UNIT"
+UNITS="superwhisper-flatpak.service superwhisper-flatpak-fcitx5.service superwhisper-flatpak-fcitx5.path"
 
 host() { flatpak-spawn --host --directory="$HOME" "$@"; }
 
-new=0
-[ -e "$DST" ] || new=1
-if [ "$new" = 1 ] || ! cmp -s "$SRC" "$DST"; then
-  mkdir -p "$DIR"
-  cp "$SRC" "$DST.tmp" && mv -f "$DST.tmp" "$DST"
-  host systemctl --user daemon-reload
-fi
-if [ "$new" = 1 ]; then
-  host systemctl --user enable "$UNIT" >/dev/null 2>&1 || true
-fi
+changed=0
+new=""
+mkdir -p "$DIR"
+for unit in $UNITS; do
+  [ -e "$DIR/$unit" ] || new="$new $unit"
+  if ! cmp -s "$SHARE/$unit" "$DIR/$unit"; then
+    cp "$SHARE/$unit" "$DIR/$unit.tmp" && mv -f "$DIR/$unit.tmp" "$DIR/$unit"
+    changed=1
+  fi
+done
+[ "$changed" = 0 ] || host systemctl --user daemon-reload
+
+for unit in $new; do
+  case "$unit" in
+    superwhisper-flatpak.service) host systemctl --user enable "$unit" >/dev/null 2>&1 || true ;;
+    *.path) host systemctl --user enable --now "$unit" >/dev/null 2>&1 || true ;;
+  esac
+done
+
 if [ "${1:-}" = settings ]; then
   # A native install's daemon has the shortcuts; the unit's ExecCondition skips ours.
   if host systemctl --user is-active --quiet superwhisper.service superwhisper-dev.service; then
     notify-send --app-name=Superwhisper --icon="$FLATPAK_ID" "Superwhisper is already running from a native install" \
       "Stop it to use the Flatpak: systemctl --user disable --now superwhisper.service" || true
   else
-    host systemctl --user start --no-block "$UNIT" || true
+    host systemctl --user start --no-block superwhisper-flatpak.service || true
   fi
 fi

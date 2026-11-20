@@ -15,10 +15,13 @@ install -Dm755 apply_extra /app/bin/apply_extra
 install -Dm755 superwhisper /app/bin/superwhisper
 install -Dm755 ensure-service "$LIBEXEC/ensure-service"
 install -Dm755 sync-assets "$LIBEXEC/sync-assets"
+install -Dm755 ensure-fcitx5 "$LIBEXEC/ensure-fcitx5"
 install -Dm644 env.sh "$LIBEXEC/env.sh"
 install -Dm644 uninstall.sh "$SHARE/uninstall.sh"
 sed "s|@APP_ID@|$APP_ID|g" superwhisper-flatpak.service > service
 install -Dm644 service "$SHARE/superwhisper-flatpak.service"
+install -Dm644 superwhisper-flatpak-fcitx5.service "$SHARE/superwhisper-flatpak-fcitx5.service"
+install -Dm644 superwhisper-flatpak-fcitx5.path "$SHARE/superwhisper-flatpak-fcitx5.path"
 
 # Host commands. Superwhisper drives systemd user units, KWin/KDE config, Hyprland and
 # the lock-screen check through these; each one runs the real command on the host.

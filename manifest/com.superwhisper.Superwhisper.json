@@ -18,6 +18,7 @@
     "--device=dri",
     "--filesystem=xdg-run/pipewire-0",
     "--filesystem=xdg-run/at-spi",
+    "--filesystem=xdg-run/superwhisper-fcitx5.sock",
     "--filesystem=xdg-run/hypr",
     "--filesystem=xdg-config/superwhisper:create",
     "--filesystem=xdg-data/superwhisper:create",
