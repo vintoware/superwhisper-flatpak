@@ -1,0 +1,21 @@
+#!/bin/sh
+#
+# indicator — the daemon starts this instead of superwhisper-indicator (SW_INDICATOR_BIN,
+# set in env.sh).
+#
+# The indicator's tray item hands Plasma/GNOME its icon as a file path under
+# $XDG_RUNTIME_DIR/superwhisper-tray-<pid>-<n>/. The sandbox's /run/user/$UID is private,
+# so the host shell couldn't read that path and showed an empty tray icon, with the item
+# itself still working. Run it with XDG_RUNTIME_DIR set to $XDG_RUNTIME_DIR/app/$FLATPAK_ID,
+# which is bind-mounted at the same path on the host. Sockets found relative to
+# XDG_RUNTIME_DIR (Wayland, PipeWire) are pinned to their real location first.
+# (The same directory + /superwhisper is SUPERWHISPER_RUNTIME, the daemon's runtime dir.)
+#
+set -eu
+case "${WAYLAND_DISPLAY:-wayland-0}" in
+  /*) ;;
+  *) export WAYLAND_DISPLAY="$XDG_RUNTIME_DIR/${WAYLAND_DISPLAY:-wayland-0}" ;;
+esac
+export PIPEWIRE_RUNTIME_DIR="${PIPEWIRE_RUNTIME_DIR:-$XDG_RUNTIME_DIR}"
+export XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR/app/${FLATPAK_ID:?}"
+exec /app/extra/app/bin/superwhisper-indicator "$@"

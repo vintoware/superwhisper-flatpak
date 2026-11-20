@@ -16,6 +16,7 @@ install -Dm755 superwhisper /app/bin/superwhisper
 install -Dm755 ensure-service "$LIBEXEC/ensure-service"
 install -Dm755 sync-assets "$LIBEXEC/sync-assets"
 install -Dm755 ensure-fcitx5 "$LIBEXEC/ensure-fcitx5"
+install -Dm755 indicator "$LIBEXEC/indicator"
 install -Dm644 env.sh "$LIBEXEC/env.sh"
 install -Dm644 uninstall.sh "$SHARE/uninstall.sh"
 sed "s|@APP_ID@|$APP_ID|g" superwhisper-flatpak.service > service

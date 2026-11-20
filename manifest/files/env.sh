@@ -24,6 +24,9 @@ export XDG_STATE_HOME="$HOME/.local/state"
 # mounted at the same path on the host, which KWin needs to read the focus script.
 export SUPERWHISPER_RUNTIME="$XDG_RUNTIME_DIR/app/$APP_ID/superwhisper"
 
+# The tray icon is a file path the host shell must read; see libexec/…/indicator.
+export SW_INDICATOR_BIN=/app/libexec/superwhisper-flatpak/indicator
+
 # Flatpak's accessibility proxy only lets the app publish its own tree. Upstream reads
 # the focused text field of other apps, so use the host's AT-SPI bus
 # (--filesystem=xdg-run/at-spi): without this variable AT-SPI asks org.a11y.Bus.

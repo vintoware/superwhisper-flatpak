@@ -104,6 +104,15 @@ apps' volume with `pactl`. Muffle is opt-in (`defaultPlaybackBehavior`; default 
   gets a private `/run/user/$UID`. `app/$FLATPAK_ID` is the one directory every instance
   shares (daemon, Settings, CLI `status`; tested). It is also bind-mounted at the same path
   on the host, where KWin reads the focus script (`kwin-focus.js`) by path.
+- `SW_INDICATOR_BIN=/app/libexec/superwhisper-flatpak/indicator`. The indicator's tray
+  item gives the host shell its icon as a **file path** under
+  `$XDG_RUNTIME_DIR/superwhisper-tray-<pid>-<n>/` (`IconName`). Plasma doesn't fall back
+  to `IconPixmap`, so with the sandbox's private `/run/user/$UID` the item worked but
+  showed no icon (seen in testing). The wrapper runs the indicator with
+  `XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR/app/$FLATPAK_ID`, the host-visible directory, after
+  making `WAYLAND_DISPLAY` absolute and pinning `PIPEWIRE_RUNTIME_DIR`. Check with
+  `busctl --user get-property <item> /StatusNotifierItem org.kde.StatusNotifierItem IconName`:
+  the path must be readable on the host.
 - `AT_SPI_BUS_ADDRESS` is unset, so AT-SPI asks `org.a11y.Bus` for the host's
   accessibility bus (mounted via `xdg-run/at-spi`). Flatpak's a11y proxy only lets an
   app publish its own tree, and upstream reads other apps' focused text fields.
