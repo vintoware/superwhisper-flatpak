@@ -18,6 +18,10 @@ install -Dm755 sync-assets "$LIBEXEC/sync-assets"
 install -Dm755 ensure-fcitx5 "$LIBEXEC/ensure-fcitx5"
 install -Dm755 indicator "$LIBEXEC/indicator"
 install -Dm644 env.sh "$LIBEXEC/env.sh"
+# libatspi crash workaround, preloaded by env.sh only on affected runtimes.
+# shellcheck disable=SC2086
+cc ${CFLAGS:-} -shared -fPIC -Wall -Werror -o libatspi-nullroot.so atspi-nullroot.c ${LDFLAGS:-}
+install -Dm755 libatspi-nullroot.so "$LIBEXEC/libatspi-nullroot.so"
 install -Dm644 uninstall.sh "$SHARE/uninstall.sh"
 sed "s|@APP_ID@|$APP_ID|g" superwhisper-flatpak.service > service
 install -Dm644 service "$SHARE/superwhisper-flatpak.service"

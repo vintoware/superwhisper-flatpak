@@ -117,6 +117,25 @@ apps' volume with `pactl`. Muffle is opt-in (`defaultPlaybackBehavior`; default 
   accessibility bus (mounted via `xdg-run/at-spi`). Flatpak's a11y proxy only lets an
   app publish its own tree, and upstream reads other apps' focused text fields.
 
+### libatspi crash workaround (`atspi-nullroot.c`, temporary)
+
+Host apps with ATK bridges (e.g. xdg-desktop-portal-gtk) advertise a direct AT-SPI
+socket at `$XDG_RUNTIME_DIR/at-spi2-XXXXXX/socket`. It never exists in the sandbox's
+private `/run/user/$UID`, so libatspi's direct connection always fails, and that is
+normally harmless. But at-spi2-core 2.62.0–2.62.1 (GNOME 51) then calls
+`atspi_accessible_get_process_id (app->root, NULL)` to word a warning. If the app's root
+isn't known yet, that's a NULL dereference. At login it killed `desktop_portal.py`
+(SIGSEGV in `handle_get_bus_address`), and the daemon doesn't restart it, so shortcuts,
+focus and paste were gone for the session. The race didn't reproduce later in a session.
+Fixed upstream in at-spi2-core commit 22c0d877, which wasn't in a release yet.
+
+`env.sh` preloads `libatspi-nullroot.so` only when `/usr/manifest.json` names one of the
+affected at-spi2-core versions. It returns -1 for a NULL accessible, as the fix does,
+and forwards every other call. Tested: libatspi's PLT slot binds to the shim when it's
+preloaded. A runtime update to a fixed release drops the preload without a rebuild.
+Remove the shim once GNOME 51 ships the fix. If GNOME backports the patch without a
+version bump, the shim stays loaded but does nothing.
+
 `sync-assets`: the daemon symlinks `~/.config/wireplumber/{wireplumber.conf.d,scripts}/superwhisper*`
 to its WirePlumber assets so the **host's** WirePlumber loads them. keep-inputs-ready keeps
 the mic warm so the first word isn't clipped. Pointing into `/app/extra` left a dangling

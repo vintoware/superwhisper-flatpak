@@ -31,3 +31,19 @@ export SW_INDICATOR_BIN=/app/libexec/superwhisper-flatpak/indicator
 # the focused text field of other apps, so use the host's AT-SPI bus
 # (--filesystem=xdg-run/at-spi): without this variable AT-SPI asks org.a11y.Bus.
 unset AT_SPI_BUS_ADDRESS
+
+# libatspi in at-spi2-core 2.62.0–2.62.1 (GNOME 51) segfaults when a host app's direct
+# AT-SPI socket, which the sandbox can't reach, fails before the app's root is known.
+# It killed desktop_portal.py at login. Preload a shim on those versions only; a runtime
+# with the fix (upstream commit 22c0d877) gets none. See atspi-nullroot.c and AGENTS.md.
+atspi_version=$(grep -o -m1 'at-spi2-core/[0-9.]*/at-spi2-core-[0-9.]*\.tar' /usr/manifest.json 2>/dev/null) || true
+atspi_version=${atspi_version##*/at-spi2-core-}
+atspi_shim=/app/libexec/superwhisper-flatpak/libatspi-nullroot.so
+case "${atspi_version%.tar}" in
+  2.62.0|2.62.0.1|2.62.1)
+    case ":${LD_PRELOAD:-}:" in
+      *":$atspi_shim:"*) ;;
+      *) export LD_PRELOAD="$atspi_shim${LD_PRELOAD:+:$LD_PRELOAD}" ;;
+    esac ;;
+esac
+unset atspi_version atspi_shim
