@@ -1,0 +1,34 @@
+#!/bin/sh
+#
+# apply_extra — runs at INSTALL/UPDATE time on the user's machine, after flatpak has
+# downloaded upstream's release archive (extra-data, sha256 already checked by flatpak)
+# to /app/extra/superwhisper.tar.zst. Sandboxed, no network, cwd = /app/extra.
+#
+# Unpacks the archive, checks every file against the archive's own MANIFEST.sha256,
+# and swaps in the Flatpak uninstall notice. Result:
+#   /app/extra/app/        upstream's app dir (run.sh, bin/, lib/, assets/, scripts/)
+#   /app/extra/licenses/   upstream's license texts
+#
+# Never preserve file ownership: a system-wide install runs this as root in a user
+# namespace with only a few uids mapped, so chown'ing to the archive's owner fails.
+#
+set -eu
+
+rm -rf app licenses _unpack
+mkdir _unpack
+bsdtar --no-same-owner --strip-components 1 -xf superwhisper.tar.zst -C _unpack
+(cd _unpack && sha256sum --quiet -c MANIFEST.sha256) \
+  || { echo "apply_extra: archive contents do not match MANIFEST.sha256" >&2; exit 1; }
+
+mv _unpack/app app
+mv _unpack/licenses licenses
+mv _unpack/VERSION _unpack/BUILD_INFO.json .
+rm -rf _unpack superwhisper.tar.zst
+
+# Upstream's uninstaller deletes a per-user install; point at flatpak instead.
+cp /app/share/superwhisper-flatpak/uninstall.sh app/uninstall.sh
+chmod 755 app/uninstall.sh
+
+[ -x app/run.sh ] && [ -x app/bin/superwhisper ] \
+  || { echo "apply_extra: app/run.sh or app/bin/superwhisper missing" >&2; exit 1; }
+echo "Superwhisper $(cat VERSION) unpacked into /app/extra"

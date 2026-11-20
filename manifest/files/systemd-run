@@ -1,0 +1,10 @@
+#!/bin/sh
+#
+# /app/bin/systemd-run — upstream uses systemd-run only to start Muffle's PipeWire filter
+# as a transient host unit (superwhisper-muffle.service). That can't work from a Flatpak:
+# the unit's MainPID is `flatpak run`'s bubblewrap, not the filter process PipeWire sees,
+# so the daemon disowns its own filter and stops it again. Refuse up front instead; the
+# daemon then falls back to lowering other apps' volume, as it does when Muffle fails.
+#
+echo "systemd-run: not available in the Superwhisper Flatpak (Muffle is unsupported; volume is lowered instead)" >&2
+exit 1

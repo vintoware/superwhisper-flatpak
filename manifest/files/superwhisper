@@ -1,0 +1,23 @@
+#!/bin/sh
+#
+# /app/bin/superwhisper — Flatpak launcher. Sets up the environment upstream's run.sh
+# expects on a normal install (env.sh), keeps the host unit and the host-visible
+# WirePlumber assets in sync, then hands over.
+#
+set -eu
+. /app/libexec/superwhisper-flatpak/env.sh
+
+if [ ! -x "$APPDIR/run.sh" ]; then
+  echo "superwhisper: /app/extra is empty; the upstream download did not finish." >&2
+  echo "Reinstall with: flatpak install --reinstall $APP_ID" >&2
+  exit 1
+fi
+
+/app/libexec/superwhisper-flatpak/sync-assets || true
+case "${1:-}" in
+  # Run by the unit itself; installing or starting the unit from here would recurse.
+  daemon|playback-restore|desktop-release) ;;
+  *) /app/libexec/superwhisper-flatpak/ensure-service "${1:-}" || true ;;
+esac
+
+exec "$APPDIR/run.sh" "$@"

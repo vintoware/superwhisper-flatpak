@@ -1,0 +1,32 @@
+# Managed by the Superwhisper Flatpak (@APP_ID@); rewritten when the app updates.
+# Remove with: systemctl --user disable --now superwhisper-flatpak.service
+[Unit]
+Description=Superwhisper dictation (Flatpak)
+# Ordered after a native install's units so the check below sees them started.
+After=graphical-session.target pipewire.service superwhisper.service superwhisper-dev.service
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+# Skipped, not failed, once the Flatpak is uninstalled, and while a native install's
+# daemon (RPM / upstream installer) runs: two daemons would both answer the shortcut.
+ExecCondition=/bin/sh -c 'flatpak info @APP_ID@ >/dev/null 2>&1 && ! systemctl --user is-active --quiet superwhisper.service superwhisper-dev.service'
+# flatpak moves the sandbox into its own app-flatpak-*.scope, so systemd only tracks the
+# outer bwrap ($MAINPID). Stopping that alone would orphan the daemon and its workers:
+# ExecStop stops the scope holding $MAINPID (SIGTERM to every sandboxed process), and
+# --die-with-parent covers the outer process dying any other way.
+ExecStart=flatpak run --die-with-parent --command=superwhisper @APP_ID@ daemon
+ExecStop=/bin/sh -c 'scope=$$(sed -n "s|^0::.*/||p" /proc/$$MAINPID/cgroup); case "$$scope" in app-flatpak-@APP_ID@-*.scope) systemctl --user stop "$$scope" ;; esac'
+ExecStopPost=-flatpak run --command=superwhisper @APP_ID@ playback-restore
+ExecStopPost=-flatpak run --command=superwhisper @APP_ID@ desktop-release
+Restart=on-failure
+RestartSec=2
+KillMode=control-group
+TimeoutStopSec=15
+UMask=0077
+# The sandbox's output is logged under flatpak's scope unit; read it with
+# journalctl --user -t superwhisper-flatpak
+SyslogIdentifier=superwhisper-flatpak
+
+[Install]
+WantedBy=graphical-session.target

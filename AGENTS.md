@@ -1,0 +1,143 @@
+# AGENTS.md
+
+Guidance for AI agents (and humans) changing this repo. It records the *why* behind
+choices that aren't obvious from the code. Read README.md first for what this is.
+
+## Hard rule: no Superwhisper binaries in git or in the bundle
+
+Superwhisper is proprietary. This repo and its published bundles contain only our
+packaging: the launcher, host shims, desktop files and metainfo, plus two open-source
+libraries built from source (gtk4-layer-shell, wl-clipboard). Upstream's release archive
+is an **extra-data** source. flatpak downloads it from `tux.superwhisper.com` on the
+user's machine and checks its sha256 and size; `apply_extra` then unpacks it into
+`/app/extra`.
+
+- The only upstream files in the bundle are the app icon PNGs. The build copies them from
+  the verified archive so launchers show an icon; flatpak can't export icons from
+  `/app/extra`.
+- `scripts/build-flatpak.sh` fails if upstream binaries end up in the bundle. Keep that check.
+- `dist/`, `.work/`, `.cache/` (upstream archives) and `.flatpak-user/` are git-ignored.
+  Never commit them.
+- The extra-data URL must be the **versioned** archive URL
+  (`…/<arch>/v<ver>/superwhisper-omarchy-<arch>-<ver>.tar.zst`). Users install from it for
+  as long as that build is published. `upstream.py` refuses an unversioned URL.
+- A bundle with extra-data can't be installed from the file ("Extra data missing in
+  detached metadata"). Install it from a repo; README → *Build locally* shows how.
+
+## Update flow
+
+`scripts/upstream.py` is the trust anchor, ported from vintoware-rpm's
+`packages/superwhisper/update`. It reads `stable.json` and checks the archive's size and
+sha256 against it. It also checks the minisign signature against
+`manifest/superwhisper-release.pub`, which is upstream's Linux release key and is also
+embedded in the archive as `app/assets/linux-release.pub`. Only then do the URL, sha256
+and size go into the manifest. At install time flatpak re-checks the sha256, and
+`apply_extra` checks every file against the archive's `MANIFEST.sha256`.
+
+CI saves `stable.json` once in the `check` job and gives the same file to both arch
+builds, so an upstream release between the jobs can't produce mismatched bundles.
+
+The published version is `<superwhisper version>-<PKG_REVISION>` (`build.env`). Bump
+`PKG_REVISION` to ship a packaging change. The push to main then rebuilds, because the
+version no longer matches the pointer files in flatpak-repo.
+
+## Sandbox model: host systemd, on purpose
+
+Upstream is built around a **systemd user service** (`superwhisper daemon`), driven with
+`systemctl --user`: start from Settings, is-active checks, and "launch at login" as
+enable/disable. It also uses host tools: KWin scripting, kreadconfig6, busctl (lock
+screen) and WirePlumber. We keep upstream's behaviour rather than reimplement it, so the
+sandbox is **not** a security boundary:
+
+- `--socket=session-bus` covers `flatpak-spawn --host`, KWin scripting, kglobalaccel,
+  MPRIS, notifications and `org.a11y.Bus`. The Slack flatpak has the same access.
+- `/app/bin/{systemctl,busctl,kreadconfig5,kreadconfig6,kwriteconfig6,hyprctl,gsettings,wtype,ydotool,pgrep,wireplumber,fc-cache}`
+  are symlinks to `host-command`, which runs the real command on the host. `pgrep` is
+  forwarded because the sandbox has its own PID namespace (doctor checks the host's fcitx5).
+
+### The host unit (`manifest/files/superwhisper-flatpak.service`)
+
+- `ensure-service` (run by the launcher for every command except the unit's own) writes
+  the unit to `~/.config/systemd/user/`. It re-writes it and runs `daemon-reload` when
+  the copy in `/app` changes, and enables it on first install, like the RPM's preset.
+  When the app is opened from the launcher (`settings`), it also starts the unit.
+  `SW_SERVICE_UNIT=superwhisper-flatpak.service` tells upstream the unit's name.
+- **flatpak moves the sandbox into its own `app-flatpak-<id>-<n>.scope`.** systemd then
+  tracks only the outer `bwrap` (MainPID); the service cgroup shows `Tasks: 0`.
+  Stopping MainPID alone **orphans the daemon and its workers** (tested). So `ExecStop`
+  reads the scope from `/proc/$MAINPID/cgroup` and stops it, which sends SIGTERM to
+  everything in the sandbox. `--die-with-parent` covers the outer process dying any other way.
+  `Restart=on-failure` works: the daemon's exit status passes through bwrap (tested with
+  SIGKILL).
+- For the same reason, the daemon's output is logged under the scope unit, not the
+  service. `SyslogIdentifier=superwhisper-flatpak` gives it a stable tag:
+  `journalctl --user -t superwhisper-flatpak`.
+- **One daemon only.** Upstream's own guard only knows `superwhisper.service` and
+  `superwhisper-dev.service`, and doesn't fire across them. With both running, F9
+  triggered two dictations (tested). The unit is ordered `After=` the native units, and its
+  `ExecCondition` skips it while either is active. `ensure-service` shows a notification
+  in that case. Don't use `Conflicts=` instead: with both enabled, the login transaction
+  would contain conflicting jobs.
+- `ExecCondition` also checks `flatpak info`, so the unit is skipped, not failed, after
+  `flatpak uninstall`.
+
+### Muffle is unsupported (`/app/bin/systemd-run` refuses)
+
+Upstream starts Muffle's PipeWire filter with `systemd-run --user --unit=superwhisper-muffle …`
+and an `ExecStop=` that names a sandbox path. We tried wrapping the command in
+`flatpak run`. The filter loaded into WirePlumber, but the daemon stopped it within
+~25 ms: the transient unit's MainPID is `flatpak run`'s bwrap, not the filter process
+PipeWire sees. The shim now fails up front, and the daemon falls back to lowering other
+apps' volume with `pactl`. Muffle is opt-in (`defaultPlaybackBehavior`; default `pause`).
+
+## Paths
+
+`env.sh`, sourced by the launcher:
+- `XDG_CONFIG_HOME`, `XDG_DATA_HOME` and `XDG_STATE_HOME` point at the host defaults.
+  finish-args mount only the `superwhisper/` subdirectories. Also mounted:
+  `~/.config/wireplumber` and `~/.config/systemd/user`, both written for the host. So
+  settings, history and the multi-GB models are shared with the RPM or upstream's
+  installer. `XDG_CACHE_HOME` stays in the sandbox, which keeps Mesa's shader cache
+  writable. finish-args spell the state dir `~/.local/state/…`: flatpak 1.16 rejects
+  `xdg-state/…`.
+- `SUPERWHISPER_RUNTIME=$XDG_RUNTIME_DIR/app/$FLATPAK_ID/superwhisper`. Each `flatpak run`
+  gets a private `/run/user/$UID`. `app/$FLATPAK_ID` is the one directory every instance
+  shares (daemon, Settings, CLI `status`; tested). It is also bind-mounted at the same path
+  on the host, where KWin reads the focus script (`kwin-focus.js`) by path.
+- `AT_SPI_BUS_ADDRESS` is unset, so AT-SPI asks `org.a11y.Bus` for the host's
+  accessibility bus (mounted via `xdg-run/at-spi`). Flatpak's a11y proxy only lets an
+  app publish its own tree, and upstream reads other apps' focused text fields.
+
+`sync-assets`: the daemon symlinks `~/.config/wireplumber/{wireplumber.conf.d,scripts}/superwhisper*`
+to its WirePlumber assets so the **host's** WirePlumber loads them. keep-inputs-ready keeps
+the mic warm so the first word isn't clipped. Pointing into `/app/extra` left a dangling
+link on the host (seen in testing). The daemon prefers
+`$XDG_DATA_HOME/superwhisper/app/current/assets/wireplumber`, the upstream installer's
+layout, so the launcher keeps a copy there, marked `.superwhisper-flatpak`. That path
+resolves on both sides. An `app/current` without our marker belongs to upstream's
+installer and is left alone.
+
+## Build
+
+- `build.sh` runs `scripts/build-flatpak.sh` in a Debian 13 container (docker or podman),
+  which provides flatpak-builder, minisign and appstreamcli.
+- flatpak-builder runs on the **host's architecture**. bubblewrap can't create its
+  namespaces under QEMU user emulation, so CI uses a native runner per arch.
+- AppStream is composed with Debian's `appstreamcli` after the build
+  (`"appstream-compose": false`). On GNOME 49+ runtimes, the in-sandbox compose loads
+  icons through glycin, which needs a Flatpak portal that a container doesn't have.
+- `gtk4-layer-shell`: the recording indicator `LD_PRELOAD`s `libgtk4-layer-shell.so.0`.
+  `wl-clipboard`: the daemon copies results with `wl-copy`. Everything else (python3 +
+  PyGObject/pycairo, GTK4, pw-record, pactl, ffmpeg, notify-send, Vulkan loader) is in
+  `org.gnome.Platform` 51. `superwhisper doctor` inside the sandbox checks all of it.
+- `.gitignore`: a `#` mid-line is part of the pattern. Put comments on their own line.
+
+## Not supported in the Flatpak
+
+- **Muffle**: see above.
+- **fcitx5 text commit**: host fcitx5 would have to load the addon from `/app/extra`, and
+  the daemon talks to it over a socket in the host's runtime dir. Dictations are pasted;
+  doctor reports "no fcitx5: dictations are pasted".
+- **GNOME Shell extension**: a native install puts it in
+  `~/.local/share/gnome-shell/extensions`. On GNOME 48+ the GlobalShortcuts portal covers
+  shortcuts.

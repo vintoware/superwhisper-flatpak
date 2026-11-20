@@ -1,0 +1,92 @@
+{
+  "id": "@APP_ID@",
+  "branch": "@BRANCH@",
+  "runtime": "@RUNTIME@",
+  "runtime-version": "@RUNTIME_VERSION@",
+  "sdk": "@SDK@",
+  "sdk-version": "@RUNTIME_VERSION@",
+  "command": "superwhisper",
+  "separate-locales": false,
+  "appstream-compose": false,
+  "finish-args": [
+    "--share=network",
+    "--share=ipc",
+    "--socket=wayland",
+    "--socket=fallback-x11",
+    "--socket=pulseaudio",
+    "--socket=session-bus",
+    "--device=dri",
+    "--filesystem=xdg-run/pipewire-0",
+    "--filesystem=xdg-run/at-spi",
+    "--filesystem=xdg-run/hypr",
+    "--filesystem=xdg-config/superwhisper:create",
+    "--filesystem=xdg-data/superwhisper:create",
+    "--filesystem=~/.local/state/superwhisper:create",
+    "--filesystem=xdg-config/systemd/user:create",
+    "--filesystem=xdg-config/wireplumber:create",
+    "--filesystem=xdg-config/hypr"
+  ],
+  "cleanup": [
+    "/include",
+    "/lib/pkgconfig",
+    "/share/gir-1.0",
+    "/share/man",
+    "/share/bash-completion",
+    "/share/zsh",
+    "/share/fish"
+  ],
+  "modules": [
+    {
+      "name": "gtk4-layer-shell",
+      "buildsystem": "meson",
+      "config-opts": [
+        "-Dintrospection=true",
+        "-Dvapi=false",
+        "-Dexamples=false",
+        "-Ddocs=false",
+        "-Dtests=false",
+        "-Dsmoke-tests=false"
+      ],
+      "sources": [
+        {
+          "type": "archive",
+          "url": "https://github.com/wmww/gtk4-layer-shell/archive/refs/tags/v1.3.0.tar.gz",
+          "sha256": "1ebb01ab14e98afd1727f68f64981c37bd23305b1f131f5667c02b94cf593192"
+        }
+      ]
+    },
+    {
+      "name": "wl-clipboard",
+      "buildsystem": "meson",
+      "config-opts": [
+        "-Dzshcompletiondir=no",
+        "-Dfishcompletiondir=no"
+      ],
+      "sources": [
+        {
+          "type": "archive",
+          "url": "https://github.com/bugaevc/wl-clipboard/archive/refs/tags/v2.3.0.tar.gz",
+          "sha256": "b4dc560973f0cd74e02f817ffa2fd44ba645a4f1ea94b7b9614dacc9f895f402"
+        }
+      ]
+    },
+    {
+      "name": "superwhisper",
+      "buildsystem": "simple",
+      "build-commands": [
+        "APP_ID=@APP_ID@ sh install.sh"
+      ],
+      "sources": [
+        { "type": "dir", "path": "files" },
+        { "type": "dir", "path": "icons", "dest": "icons" },
+        {
+          "type": "extra-data",
+          "filename": "superwhisper.tar.zst",
+          "url": "@SW_URL@",
+          "sha256": "@SW_SHA256@",
+          "size": @SW_SIZE@
+        }
+      ]
+    }
+  ]
+}

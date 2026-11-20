@@ -1,0 +1,19 @@
+#!/bin/sh
+#
+# host-command — /app/bin/{systemctl,busctl,kreadconfig6,…} are symlinks to this script.
+# It runs the command it was invoked as on the host, through the Flatpak portal
+# (flatpak-spawn --host; needs the session bus). Exit status, stdin/stdout/stderr pass
+# through. See AGENTS.md for why each command is forwarded.
+#
+name=$(basename "$0")
+
+# flatpak-spawn runs the host command in the caller's directory, which may not exist
+# on the host (/app/..., /run/flatpak/...).
+case "$PWD" in
+  "$HOME"|"$HOME"/*|/tmp|/tmp/*) dir=$PWD ;;
+  *) dir=$HOME ;;
+esac
+
+set --  --directory="$dir" "$name" "$@"
+[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ] && set -- --env=HYPRLAND_INSTANCE_SIGNATURE="$HYPRLAND_INSTANCE_SIGNATURE" "$@"
+exec flatpak-spawn --host "$@"

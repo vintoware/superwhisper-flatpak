@@ -1,0 +1,30 @@
+# Sourced by /app/bin/superwhisper.
+# The environment upstream's run.sh expects on a native install. See AGENTS.md.
+
+APP_ID="${FLATPAK_ID:-com.superwhisper.Superwhisper}"
+APPDIR=/app/extra/app
+
+# Updates come from the Flatpak repo; upstream's updater would write into /app/extra.
+export SUPERWHISPER_UPDATE_DISABLED=1
+
+# The daemon runs as a host systemd user unit (see ensure-service). Upstream asks
+# systemctl about $SW_SERVICE_UNIT for start/stop and "launch at login".
+export SW_SERVICE_UNIT=superwhisper-flatpak.service
+
+# Settings, history and models live where a native install keeps them (~/.config,
+# ~/.local/share, ~/.local/state under superwhisper/, mounted by finish-args), so the
+# RPM / upstream installer and this Flatpak share one setup. Caches stay in the
+# sandbox's own XDG_CACHE_HOME.
+export XDG_CONFIG_HOME="$HOME/.config"
+export XDG_DATA_HOME="$HOME/.local/share"
+export XDG_STATE_HOME="$HOME/.local/state"
+
+# Every `flatpak run` gets a private /run/user/$UID; $XDG_RUNTIME_DIR/app/$APP_ID is the
+# one directory all instances (daemon, settings window, CLI) share, and it is bind
+# mounted at the same path on the host, which KWin needs to read the focus script.
+export SUPERWHISPER_RUNTIME="$XDG_RUNTIME_DIR/app/$APP_ID/superwhisper"
+
+# Flatpak's accessibility proxy only lets the app publish its own tree. Upstream reads
+# the focused text field of other apps, so use the host's AT-SPI bus
+# (--filesystem=xdg-run/at-spi): without this variable AT-SPI asks org.a11y.Bus.
+unset AT_SPI_BUS_ADDRESS

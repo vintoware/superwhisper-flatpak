@@ -1,0 +1,35 @@
+#!/bin/sh
+#
+# sync-assets — keeps a copy of upstream's WirePlumber assets where the host can see them.
+# Called by /app/bin/superwhisper before every command (cheap when nothing changed).
+#
+# The daemon links ~/.config/wireplumber/{wireplumber.conf.d,scripts}/superwhisper* to its
+# assets, so the *host's* WirePlumber loads them (keep-inputs-ready: the microphone stays
+# warm, so the first word isn't clipped). It prefers
+# $XDG_DATA_HOME/superwhisper/app/current/assets/wireplumber (upstream installer's layout)
+# over its own app dir. /app/extra doesn't exist on the host, but ~/.local/share/superwhisper
+# is mounted at the same path on both sides, so we keep a copy there.
+#
+# An app/current that we didn't create (marker file missing) belongs to upstream's
+# installer and is left alone.
+#
+set -eu
+
+SRC=/app/extra/app/assets/wireplumber
+CURRENT="${XDG_DATA_HOME:?}/superwhisper/app/current"
+MARKER="$CURRENT/.superwhisper-flatpak"
+
+[ -d "$SRC" ] || exit 0
+if [ -L "$CURRENT" ] || { [ -e "$CURRENT" ] && [ ! -e "$MARKER" ]; }; then
+  exit 0
+fi
+if [ -e "$MARKER" ] && diff -rq "$SRC" "$CURRENT/assets/wireplumber" >/dev/null 2>&1; then
+  exit 0
+fi
+
+mkdir -p "$CURRENT/assets"
+echo "WirePlumber assets of the Superwhisper Flatpak; see sync-assets in the Flatpak." > "$MARKER"
+rm -rf "$CURRENT/assets/wireplumber.new"
+cp -R "$SRC" "$CURRENT/assets/wireplumber.new"
+rm -rf "$CURRENT/assets/wireplumber"
+mv "$CURRENT/assets/wireplumber.new" "$CURRENT/assets/wireplumber"

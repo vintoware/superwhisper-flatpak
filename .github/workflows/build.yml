@@ -1,0 +1,184 @@
+name: Build and publish
+
+# Checks Superwhisper's stable channel every 4 hours. When the Flatpak repo
+# (FLATPAK_REPO) doesn't list <superwhisper version>-<PKG_REVISION> for both
+# architectures yet, this workflow:
+#   1. saves stable.json once, so both architectures build the same release,
+#   2. builds the bundle on a native runner per architecture. The build verifies the
+#      archive's size, sha256 and minisign signature, but the bundle carries no
+#      Superwhisper binaries: flatpak downloads the archive from superwhisper.com at
+#      install time (extra-data),
+#   3. attaches both bundles to the GitHub release v<version>,
+#   4. pushes apps/com.superwhisper.Superwhisper.<arch>.json (version, bundle URL,
+#      sha256) to FLATPAK_REPO with a deploy key. That push triggers FLATPAK_REPO's own
+#      workflow, which signs the builds into its OSTree repo and deploys GitHub Pages.
+# Pushing a PKG_REVISION bump (build.env) to main republishes the current release.
+
+on:
+  schedule:
+    - cron: "23 */4 * * *"
+  push:
+    branches: [main]
+    paths:
+      - build.env
+      - build.sh
+      - Containerfile
+      - manifest/**
+      - scripts/**
+      - .github/workflows/build.yml
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Rebuild and republish even if this version is already published"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: superwhisper-flatpak
+  cancel-in-progress: false
+
+env:
+  FLATPAK_REPO: vintoware/flatpak-repo
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      build: ${{ steps.plan.outputs.build }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Resolve Superwhisper version
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          set -a; . ./build.env; set +a
+          curl -fsS --retry 3 -o stable.json https://tux.superwhisper.com/stable.json
+          sw=$(python3 -I scripts/upstream.py version --channel-file stable.json)
+          version="$sw-$PKG_REVISION"
+          build=false
+          for arch in x86_64 aarch64; do
+            published=$(gh api "repos/$FLATPAK_REPO/contents/apps/$APP_ID.$arch.json" --jq .content 2>/dev/null \
+              | base64 -d | jq -r .version 2>/dev/null || true)
+            echo "$arch: published=${published:-none}"
+            [ "$published" = "$version" ] || build=true
+          done
+          [ "$FORCE" = true ] && build=true
+          echo "Superwhisper stable=$sw package=$version -> build=$build"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: channel
+          path: stable.json
+          retention-days: 7
+
+  build:
+    needs: check
+    if: needs.check.outputs.build == 'true'
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    env:
+      VERSION: ${{ needs.check.outputs.version }}
+      PROJECT_URL: ${{ github.server_url }}/${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: channel
+
+      - name: Build flatpak (${{ matrix.arch }})
+        run: SW_CHANNEL_FILE=stable.json FLATPAK_ARCH=${{ matrix.arch }} ./build.sh
+
+      - name: Check version
+        run: jq -e --arg v "$VERSION" '.version == $v' dist/build-inputs.${{ matrix.arch }}.json
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bundle-${{ matrix.arch }}
+          path: dist/
+          retention-days: 7
+
+  publish:
+    needs: [check, build]
+    runs-on: ubuntu-24.04
+    env:
+      VERSION: ${{ needs.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: bundle-*
+          path: dist
+          merge-multiple: true
+
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -a; . ./build.env; set +a
+          tag="v$VERSION"
+          files=(dist/*.flatpak dist/build-inputs.*.json)
+          ls -l "${files[@]}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "${files[@]}" --clobber
+          else
+            sw="${VERSION%-*}"
+            notes="Superwhisper $sw for x86_64 and aarch64. Install from https://${FLATPAK_REPO%%/*}.github.io/${FLATPAK_REPO#*/}/
+
+          The bundles contain no Superwhisper binaries: flatpak downloads Superwhisper's release archive from superwhisper.com at install time (extra-data) and checks its SHA-256.
+
+          Upstream release notes: https://github.com/superultrainc/superwhisper-linux-releases/releases/tag/v$sw"
+            gh release create "$tag" "${files[@]}" --title "Superwhisper $VERSION" --notes "$notes"
+          fi
+
+      - name: Publish to ${{ env.FLATPAK_REPO }}
+        env:
+          DEPLOY_KEY: ${{ secrets.FLATPAK_REPO_DEPLOY_KEY }}
+        run: |
+          set -a; . ./build.env; set +a
+          install -d -m 700 ~/.ssh
+          # GitHub's published SSH host key (docs: "GitHub's SSH key fingerprints")
+          echo "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl" >> ~/.ssh/known_hosts
+          eval "$(ssh-agent -s)"
+          printf '%s\n' "$DEPLOY_KEY" | ssh-add -
+
+          dest="$RUNNER_TEMP/flatpak-repo"
+          git clone --depth 1 "git@github.com:$FLATPAK_REPO.git" "$dest"
+          mkdir -p "$dest/apps"
+          for arch in x86_64 aarch64; do
+            bundle="dist/$APP_ID.$arch.flatpak"
+            jq -n \
+              --arg id "$APP_ID" --arg arch "$arch" --arg branch "$FLATPAK_BRANCH" \
+              --arg version "$VERSION" \
+              --arg url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/v$VERSION/$APP_ID.$arch.flatpak" \
+              --arg sha "$(sha256sum "$bundle" | cut -d' ' -f1)" \
+              --arg source "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/v$VERSION" \
+              '{id: $id, arch: $arch, branch: $branch, version: $version,
+                bundle_url: $url, bundle_sha256: $sha, source: $source}' > "$dest/apps/$APP_ID.$arch.json"
+            cat "$dest/apps/$APP_ID.$arch.json"
+          done
+
+          cd "$dest"
+          git add apps
+          if git diff --cached --quiet; then echo "pointers unchanged"; exit 0; fi
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -q -m "Superwhisper $VERSION (x86_64, aarch64)" -m "From $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          git push origin HEAD

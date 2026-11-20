@@ -1,0 +1,12 @@
+# Build outputs and caches (never commit: they hold Superwhisper's proprietary archive
+# or bundles, and they're large). Comments go on their own line: a mid-line # is part
+# of the pattern.
+dist/
+.work/
+.cache/
+.flatpak-user/
+.flatpak-builder/
+*.flatpak
+
+.env
+.DS_Store

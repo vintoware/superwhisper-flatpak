@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>@APP_ID@</id>
+  <name>Superwhisper</name>
+  <summary>Fast local and cloud dictation (unofficial Flatpak)</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>LicenseRef-proprietary</project_license>
+  <developer id="com.superwhisper">
+    <name>Superwhisper</name>
+  </developer>
+  <description>
+    <p>
+      Superwhisper turns speech into text with local (Vulkan) or cloud transcription
+      and pastes it into the focused application. Built for Wayland: KDE Plasma, GNOME
+      and Hyprland.
+    </p>
+    <p>
+      Unofficial Flatpak. The Superwhisper release archive is downloaded from
+      superwhisper.com at install time and is not redistributed. Not affiliated with or
+      supported by Superwhisper.
+    </p>
+  </description>
+  <launchable type="desktop-id">@APP_ID@.desktop</launchable>
+  <url type="homepage">https://superwhisper.com</url>
+  <url type="bugtracker">@PROJECT_URL@/issues</url>
+  <content_rating type="oars-1.1"/>
+  <categories>
+    <category>Utility</category>
+    <category>Accessibility</category>
+  </categories>
+  <releases>
+    <release version="@SW_VERSION@" date="@SW_DATE@">
+      <url type="details">@SW_NOTES_URL@</url>
+    </release>
+  </releases>
+</component>
